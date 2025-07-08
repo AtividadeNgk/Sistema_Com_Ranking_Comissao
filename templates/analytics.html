@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics - Painel Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; }
+        .header { background: #2196F3; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h2 { color: #2196F3; margin-bottom: 10px; }
+        .big-number { font-size: 32px; font-weight: bold; color: #4CAF50; }
+        .filters { margin-bottom: 20px; display: flex; gap: 10px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; background: #2196F3; color: white; }
+        .btn:hover { background: #1976D2; }
+        .btn.active { background: #4CAF50; }
+        .top-list { list-style: none; }
+        .top-list li { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        .rank { font-weight: bold; color: #2196F3; margin-right: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; font-weight: bold; color: #333; }
+        tr:hover { background: #f5f5f5; }
+        .back-btn { background: white; color: #2196F3; text-decoration: none; padding: 10px 20px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Analytics - Centro de Controle</h1>
+        <a href="/" class="back-btn">Voltar</a>
+    </div>
+    
+    <div class="container">
+        <div class="filters">
+            <button class="btn active" onclick="loadComissoes('hoje')">Hoje</button>
+            <button class="btn" onclick="loadComissoes('semana')">7 dias</button>
+            <button class="btn" onclick="loadComissoes('mes')">30 dias</button>
+            <button class="btn" onclick="loadComissoes('ano')">365 dias</button>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>💰 Sua Comissão Total</h2>
+                <div class="big-number" id="comissao-total">R$ 0,00</div>
+                <p id="periodo-info">Período: Hoje</p>
+            </div>
+            <div class="card">
+                <h2>🤖 Bots Ativos</h2>
+                <div class="big-number" id="total-bots">0</div>
+                <p>Vendendo ativamente</p>
+            </div>
+            <div class="card">
+                <h2>💸 Faturamento Total</h2>
+                <div class="big-number" id="faturamento-total">R$ 0,00</div>
+                <p>Todos os bots somados</p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>🏆 TOP 10 BOTS - Maiores Faturamentos</h2>
+            <canvas id="chartTop10" height="100"></canvas>
+            <table id="top10-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Bot</th>
+                        <th>Vendas</th>
+                        <th>Faturamento</th>
+                        <th>Sua Comissão</th>
+                        <th>Ticket Médio</th>
+                    </tr>
+                </thead>
+                <tbody id="top10-body"></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let chartTop10 = null;
+        
+        function formatMoney(value) {
+            return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+        
+        async function loadAnalytics() {
+            const response = await fetch('/api/analytics/bots');
+            const data = await response.json();
+            
+            document.getElementById('total-bots').textContent = data.resumo.total_bots;
+            document.getElementById('faturamento-total').textContent = formatMoney(data.resumo.total_faturamento);
+            
+            const tbody = document.getElementById('top10-body');
+            tbody.innerHTML = data.top10.map((bot, index) => `
+                <tr>
+                    <td><strong>${index + 1}</strong></td>
+                    <td>@${bot.bot_username}</td>
+                    <td>${bot.vendas}</td>
+                    <td>${formatMoney(bot.total)}</td>
+                    <td><strong>${formatMoney(bot.comissao)}</strong></td>
+                    <td>${formatMoney(bot.ticket_medio)}</td>
+                </tr>
+            `).join('');
+            
+            updateChart(data.top10);
+        }
+        
+        async function loadComissoes(periodo) {
+            document.querySelectorAll('.btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            const response = await fetch(`/api/analytics/comissoes?periodo=${periodo}`);
+            const data = await response.json();
+            
+            document.getElementById('comissao-total').textContent = formatMoney(data.total);
+            document.getElementById('periodo-info').textContent = `Período: ${periodo}`;
+        }
+        
+        function updateChart(bots) {
+            const ctx = document.getElementById('chartTop10').getContext('2d');
+            
+            if (chartTop10) chartTop10.destroy();
+            
+            chartTop10 = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: bots.map(b => '@' + b.bot_username),
+                    datasets: [{
+                        label: 'Faturamento (R$)',
+                        data: bots.map(b => b.total),
+                        backgroundColor: '#2196F3',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toLocaleString('pt-BR');
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        loadAnalytics();
+        loadComissoes('hoje');
+        setInterval(loadAnalytics, 30000);
+    </script>
+</body>
+</html>
